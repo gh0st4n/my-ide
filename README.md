@@ -1,6 +1,10 @@
 # Konfigurasi Neovim untuk Python & Zig
 
 ## Python
+- Requirement
+    - NodeJS
+    - NPM
+
 
 ## Zig
 
