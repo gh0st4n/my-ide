@@ -44,8 +44,8 @@ sudo xbps-install -Syu
 log_info "Installing base packages..."
 sudo xbps-install -y \
   git curl wget unzip \
-  neovim nodejs \
-  python3 python3-pip python3-virtualenv python3-devel \
+  neovim python3 \
+  python3-pip python3-virtualenv python3-devel \
   ripgrep fd tree-sitter tree-sitter-cli
 
 # ==========================================
@@ -80,8 +80,6 @@ install_zig_via_letx() {
   letx get zig && \
   letx -x pkg zig && \
   letx set zig
-  # Catatan: jika 'letx set' butuh root di sistem kamu, tambahkan
-  # 'sudo' di depannya sendiri — di sini dipanggil sesuai alur asli.
 }
 
 # Opsi 2: Fallback - download manual via curl, symlink ke PATH standar
