@@ -2,7 +2,8 @@
 
 # ==========================================
 # T4n IDE (Python + Zig) Installer for NvChad
-# Installasi Zig & ZLS di /opt
+# Zig via Let-X (VUR Helper), fallback curl
+# LSP & Treesitter via NvChad default command
 # ==========================================
 
 set -e  # Exit on error
@@ -25,7 +26,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Check Root
 if [ "$EUID" -eq 0 ]; then 
-  log_error "Jangan jalankan script ini sebagai root. Gunakan user biasa (sudo akan diminta saat perlu)."
+  log_error "Do not run this script as root. Use a regular user (sudo will be prompted if necessary)."
 fi
 
 # ==========================================
@@ -34,7 +35,7 @@ fi
 log_info "T4n IDE (Python + Zig) Installer x86_64"
 
 if ! command -v xbps-install &> /dev/null; then
-  log_error "XBPS not found. Script ini hanya untuk Void Linux / T4n OS."
+  log_error "XBPS not found. This script is only for Void Linux / T4n OS."
 fi
 
 log_info "Updating system packages..."
@@ -63,38 +64,59 @@ if ! command -v uv &> /dev/null; then
 fi
 
 # ==========================================
-# 3. ZIG SETUP (/opt/zig)
+# 3. ZIG SETUP
 # ==========================================
 ZIG_VERSION="0.16.0"
-ZIG_INSTALL_DIR="/opt/zig"
+ZIG_INSTALL_DIR="/opt/zig-${ZIG_VERSION}"
+ZIG_BIN_LINK="/usr/local/bin/zig"
 
-log_info "Installing Zig ${ZIG_VERSION} to ${ZIG_INSTALL_DIR}..."
+# Opsi 1: Install via Let-X (VUR Helper T4n Labs)
+install_zig_via_letx() {
+  if ! command -v letx &> /dev/null; then
+    return 1
+  fi
 
-cd /tmp
-# Download jika belum ada
-if [ ! -f "zig-linux-x86_64-${ZIG_VERSION}.tar.xz" ]; then
-  wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-fi
+  log_info "Let-X detected, installing Zig via VUR Helper..."
+  letx get zig && \
+  letx -x pkg zig && \
+  letx set zig
+  # Catatan: jika 'letx set' butuh root di sistem kamu, tambahkan
+  # 'sudo' di depannya sendiri — di sini dipanggil sesuai alur asli.
+}
 
-# Hapus instalasi lama jika ada
-sudo rm -rf "$ZIG_INSTALL_DIR"
-sudo mkdir -p "$ZIG_INSTALL_DIR"
+# Opsi 2: Fallback - download manual via curl, symlink ke PATH standar
+install_zig_via_curl() {
+  log_info "Installing Zig ${ZIG_VERSION} via curl to ${ZIG_INSTALL_DIR}..."
 
-# Ekstrak dan salin ke /opt/zig
-tar -xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-sudo cp -r "zig-linux-x86_64-${ZIG_VERSION}"/* "$ZIG_INSTALL_DIR/"
+  local tarball="zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+  cd /tmp
 
-# Tambahkan PATH ke ~/.bashrc (aman & tidak duplikat)
-if ! grep -q "$ZIG_INSTALL_DIR" "$HOME/.bashrc" 2>/dev/null; then
-  echo "" >> "$HOME/.bashrc"
-  echo "# T4n Zig PATH" >> "$HOME/.bashrc"
-  echo "export PATH=\"$ZIG_INSTALL_DIR:\$PATH\"" >> "$HOME/.bashrc"
+  # Download jika belum ada
+  if [ ! -f "$tarball" ]; then
+    curl -LsSf -o "$tarball" "https://ziglang.org/download/${ZIG_VERSION}/${tarball}"
+  fi
+
+  # Hapus instalasi lama jika ada, ekstrak ke /opt
+  sudo rm -rf "$ZIG_INSTALL_DIR"
+  sudo mkdir -p "$ZIG_INSTALL_DIR"
+  tar -xf "$tarball"
+  sudo cp -r "zig-linux-x86_64-${ZIG_VERSION}"/* "$ZIG_INSTALL_DIR/"
+
+  # Symlink ke /usr/local/bin (sudah ada di PATH default, gak perlu edit .bashrc)
+  sudo ln -sf "$ZIG_INSTALL_DIR/zig" "$ZIG_BIN_LINK"
+}
+
+log_info "Setting up Zig..."
+if ! install_zig_via_letx; then
+  log_warn "Let-X tidak tersedia/gagal, fallback ke instalasi manual via curl."
+  install_zig_via_curl
 fi
 
 # Verifikasi
-if [ ! -f "$ZIG_INSTALL_DIR/zig" ]; then
-  log_error "Gagal memasang Zig binary di $ZIG_INSTALL_DIR"
+if ! command -v zig &> /dev/null; then
+  log_error "Zig is not installed properly, check the installation steps above."
 fi
+log_success "Zig $(zig version) is ready to use in $(command -v zig)"
 
 # ==========================================
 # 4. FONT INSTALLATION
@@ -121,7 +143,7 @@ log_info "Setting up NvChad configuration..."
 
 # Cek apakah folder nvim ada di script directory
 if [ ! -d "$PROJECT_DIR/nvim" ]; then
-  log_error "Folder 'nvim' tidak ditemukan di '$PROJECT_DIR'. Pastikan struktur file benar."
+  log_error "The folder 'nvim' was not found in '$PROJECT_DIR'. Make sure the file structure is correct."
 fi
 
 # Backup old config
@@ -143,11 +165,11 @@ nvim --headless "+Lazy sync" +qa
 # ========================
 # INSTALL LSP VIA MASON
 # ========================
-log_info "Installing LSP (pyright & zls) via Mason..."
+log_info "Installing LSP (ty & zls) via Mason..."
 nvim --headless "+MasonInstall ty zls" +qa || true
 
 log_info "Installing Treesitter parsers (Python, Zig)..."
-nvim --headless "+TSUpdateSync python zig" +qa || true
+nvim --headless "+TSInstall python zig" +qa || true
 
 # ==========================================
 # FINISH
@@ -156,9 +178,9 @@ echo ""
 log_success "Installation Complete!"
 echo ""
 log_warn "Struktur Installasi:"
-echo "    Zig  : /opt/zig"
+echo "    Zig  : $(command -v zig)"
 echo ""
-log_warn "Silakan restart shell (terminal) Anda untuk memuat PATH baru:"
+log_warn "UV mungkin butuh reload shell biar masuk PATH:"
 echo "    source ~/.bashrc   (jika pakai bash)"
 echo "    source ~/.zshrc   (jika pakai zsh)"
 echo ""
