@@ -53,94 +53,95 @@ sudo xbps-install -y \
 # ==========================================
 log_info "Setting up Python environment..."
 
-# Upgrade pip dan install tools python
-python3 -m ensurepip --upgrade || true
-pip3 install --user --upgrade pip
-pip3 install --user pynvim ruff
+# Void Linux / T4n OS menerapkan PEP 668, jadi kita gunakan xbps-install 
+# untuk menghindari error "externally-managed-environment" dan menjaga integritas sistem.
+log_info "Installing Python tools (pynvim, ruff) via XBPS..."
+sudo xbps-install -y python3-pynvim ruff || {
+    log_warn "Gagal menginstal via XBPS, mencoba fallback dengan pip --break-system-packages..."
+    pip3 install --user --break-system-packages pynvim ruff
+}
 
 log_info "Install UV - Package Manager..."
 if ! command -v uv &> /dev/null; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+    curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 
 # ==========================================
 # 3. ZIG SETUP
 # ==========================================
-ZIG_VERSION="0.16.0"
+ZIG_VERSION="0.17.0"
 ZIG_INSTALL_DIR="/opt/zig-${ZIG_VERSION}"
 
 # Opsi 1: Install via Let-X (VUR Helper T4n Labs)
 install_zig_via_letx() {
-  if ! command -v letx &> /dev/null; then
-    return 1
-  fi
-
-  log_info "Let-X terdeteksi, menginstall Zig via VUR Helper..."
-  letx get zig && \
-  letx -x pkg zig && \
-  letx set zig
+    if ! command -v letx &> /dev/null; then
+        return 1
+    fi
+    log_info "Let-X terdeteksi, menginstall Zig via VUR Helper..."
+    letx get zig && \
+    letx -x pkg zig && \
+    letx set zig
 }
 
 # Daftarkan alias zig ke bash, zsh, dan fish (aman, gak duplikat tiap run)
 add_zig_alias() {
-  local zig_bin="$1"
-
-  # Bash
-  touch "$HOME/.bashrc"
-  if ! grep -qF "alias zig=" "$HOME/.bashrc"; then
-    { echo ""; echo "# T4n Zig alias"; echo "alias zig=\"$zig_bin\""; } >> "$HOME/.bashrc"
-  fi
-
-  # Zsh
-  touch "$HOME/.zshrc"
-  if ! grep -qF "alias zig=" "$HOME/.zshrc"; then
-    { echo ""; echo "# T4n Zig alias"; echo "alias zig=\"$zig_bin\""; } >> "$HOME/.zshrc"
-  fi
-
-  # Fish
-  local fish_config="$HOME/.config/fish/config.fish"
-  mkdir -p "$(dirname "$fish_config")"
-  touch "$fish_config"
-  if ! grep -qF "alias zig" "$fish_config"; then
-    { echo ""; echo "# T4n Zig alias"; echo "alias zig=\"$zig_bin\""; } >> "$fish_config"
-  fi
+    local zig_bin="$1"
+    # Bash
+    touch "$HOME/.bashrc"
+    if ! grep -qF "alias zig=" "$HOME/.bashrc"; then
+        { echo ""; echo "# T4n Zig alias"; echo "alias zig=\"$zig_bin\""; } >> "$HOME/.bashrc"
+    fi
+    # Zsh
+    touch "$HOME/.zshrc"
+    if ! grep -qF "alias zig=" "$HOME/.zshrc"; then
+        { echo ""; echo "# T4n Zig alias"; echo "alias zig=\"$zig_bin\""; } >> "$HOME/.zshrc"
+    fi
+    # Fish
+    local fish_config="$HOME/.config/fish/config.fish"
+    mkdir -p "$(dirname "$fish_config")"
+    touch "$fish_config"
+    if ! grep -qF "alias zig" "$fish_config"; then
+        { echo ""; echo "# T4n Zig alias"; echo "alias zig=\"$zig_bin\""; } >> "$fish_config"
+    fi
 }
 
 # Opsi 2: Fallback - download manual via curl, daftarkan sebagai alias
 install_zig_via_curl() {
-  log_info "Menginstall Zig ${ZIG_VERSION} via curl ke ${ZIG_INSTALL_DIR}..."
-
-  local tarball="zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-  cd /tmp
-
-  # Download jika belum ada
-  if [ ! -f "$tarball" ]; then
-    curl -LsSf -o "$tarball" "https://ziglang.org/download/${ZIG_VERSION}/${tarball}"
-  fi
-
-  # Hapus instalasi lama jika ada, ekstrak ke /opt
-  sudo rm -rf "$ZIG_INSTALL_DIR"
-  sudo mkdir -p "$ZIG_INSTALL_DIR"
-  tar -xf "$tarball"
-  sudo cp -r "zig-linux-x86_64-${ZIG_VERSION}"/* "$ZIG_INSTALL_DIR/"
-
-  # Alias ke .bashrc / .zshrc / fish (bukan symlink ke PATH)
-  add_zig_alias "$ZIG_INSTALL_DIR/zig"
+    log_info "Menginstall Zig ${ZIG_VERSION} via curl ke ${ZIG_INSTALL_DIR}..."
+    
+    # PERHATIAN: Format nama file Zig berubah di versi >= 0.14.0 (arch-os-version)
+    local tarball="zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+    local extract_dir="zig-x86_64-linux-${ZIG_VERSION}"
+    
+    cd /tmp
+    # Download jika belum ada
+    if [ ! -f "$tarball" ]; then
+        curl -LsSf -o "$tarball" "https://ziglang.org/download/${ZIG_VERSION}/${tarball}"
+    fi
+    
+    # Hapus instalasi lama jika ada, ekstrak ke /opt
+    sudo rm -rf "$ZIG_INSTALL_DIR"
+    sudo mkdir -p "$ZIG_INSTALL_DIR"
+    tar -xf "$tarball"
+    sudo cp -r "${extract_dir}"/* "$ZIG_INSTALL_DIR/"
+    
+    # Alias ke .bashrc / .zshrc / fish
+    add_zig_alias "$ZIG_INSTALL_DIR/zig"
 }
 
 log_info "Setting up Zig..."
 if ! install_zig_via_letx; then
-  log_warn "Let-X is unavailable/failed, fallback to manual installation via curl."
-  install_zig_via_curl
+    log_warn "Let-X is unavailable/failed, fallback to manual installation via curl."
+    install_zig_via_curl
 fi
 
 # Verifikasi (alias baru aktif setelah shell direstart, jadi fallback cek binary langsung)
 if command -v zig &> /dev/null; then
-  log_success "Zig $(zig version) siap dipakai di $(command -v zig)"
+    log_success "Zig $(zig version) siap dipakai di $(command -v zig)"
 elif [ -x "$ZIG_INSTALL_DIR/zig" ]; then
-  log_success "Zig $("$ZIG_INSTALL_DIR/zig" version) terpasang, alias aktif setelah shell direstart"
+    log_success "Zig $("$ZIG_INSTALL_DIR/zig" version) terpasang, alias aktif setelah shell direstart"
 else
-  log_error "Zig tidak terpasang dengan benar, periksa langkah instalasi di atas."
+    log_error "Zig tidak terpasang dengan benar, periksa langkah instalasi di atas."
 fi
 
 # ==========================================
